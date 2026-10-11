@@ -1,0 +1,64 @@
+{
+  "Comment": "FlowGuard AI Autonomous Fulfillment Mitigation State Machine",
+  "StartAt": "AnalyzeBottleneckRisk",
+  "States": {
+    "AnalyzeBottleneckRisk": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "FlowGuardAnalyzeRiskLambda",
+        "Payload.$": "$"
+      },
+      "Next": "EvaluateConfidence"
+    },
+    "EvaluateConfidence": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.confidenceScore",
+          "NumericGreaterThanEquals": 85,
+          "Next": "RedistributeWorkers"
+        }
+      ],
+      "Default": "ManualEscalation"
+    },
+    "RedistributeWorkers": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "FlowGuardRedistributeWorkersLambda",
+        "Payload.$": "$"
+      },
+      "Next": "VerifyMitigation"
+    },
+    "VerifyMitigation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "FlowGuardVerifyMitigationLambda",
+        "Payload.$": "$"
+      },
+      "Next": "PublishEventBridgeNotice"
+    },
+    "PublishEventBridgeNotice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::events:putEvents",
+      "Parameters": {
+        "Entries": [
+          {
+            "EventBusName": "FlowGuardEventBus",
+            "Source": "flowguard.mitigation",
+            "DetailType": "MitigationCompleted",
+            "Detail.$": "$"
+          }
+        ]
+      },
+      "End": true
+    },
+    "ManualEscalation": {
+      "Type": "Pass",
+      "Result": "Confidence below threshold, escalating to supervisor.",
+      "End": true
+    }
+  }
+}

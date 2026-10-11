@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FlowGuard AI Autonomous Fulfillment Operations Infrastructure
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.11
+    Environment:
+      Variables:
+        AWS_MODE: live
+        DYNAMODB_TABLE: !Ref SimulationTable
+        S3_BUCKET: !Ref VisionBucket
+
+Resources:
+  # DynamoDB Telemetry Table
+  SimulationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FlowGuardSimulationState
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # S3 Bucket for Warehouse Inspection Images
+  VisionBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: flowguard-warehouse-vision-bucket
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ['*']
+
+  # EventBridge Custom Bus
+  FlowGuardEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: FlowGuardEventBus
+
+  # Step Functions Autonomous Mitigation State Machine
+  MitigationStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: FlowGuardMitigationStateMachine
+      DefinitionUri: statemachine/mitigation.json
+      Policies:
+        - LambdaInvokePolicy: {}
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref FlowGuardEventBus
+
+  # API Gateway Backend Lambda Function
+  BackendLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: FlowGuardBackendApi
+      CodeUri: ../backend
+      Handler: main.handler
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for FlowGuard Backend
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
